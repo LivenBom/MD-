@@ -329,6 +329,7 @@ class ViewController:
         refreshMiaoYanNum()
 
         if UserDefaultsManagement.isSingleMode, isLaunch {
+            vc.toastInSingleMode()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 vc.hideSidebar("")
             }
@@ -421,11 +422,17 @@ class ViewController:
         editArea.isEditable = false
 
         editArea.layoutManager?.defaultAttachmentScaling = .scaleProportionallyDown
-        if UserDefaultsManagement.fontName != "LXGW WenKai Lite" {
+        if UserDefaultsManagement.fontName != "LXGW WenKai Screen" {
             editArea.layoutManager?.typesetterBehavior = .behavior_10_2_WithCompatibility
         }
         search.font = UserDefaultsManagement.searchFont
-        editArea.font = UserDefaultsManagement.noteFont
+
+        editArea.defaultParagraphStyle = NSTextStorage.getParagraphStyle()
+        editArea.typingAttributes = [
+            .font: UserDefaultsManagement.noteFont!,
+            .paragraphStyle: NSTextStorage.getParagraphStyle(),
+        ]
+
         titleLabel.font = UserDefaultsManagement.titleFont.titleBold()
         emptyEditTitle.font = UserDefaultsManagement.emptyEditTitleFont
 
@@ -1557,16 +1564,13 @@ class ViewController:
 
     // Changed main edit view
     func textDidChange(_ notification: Notification) {
-        guard let note = getCurrentNote() else {
-            return
-        }
+        guard let note = getCurrentNote() else { return }
 
         blockFSUpdates()
 
         if !UserDefaultsManagement.preview, editArea.isEditable {
             editArea.removeHighlight()
             editArea.saveImages()
-
             note.save(attributed: editArea.attributedString())
 
             // 编辑内容，标题排序的时候有bug，先关掉
@@ -1982,7 +1986,7 @@ class ViewController:
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             vc.titleLabel.editModeOn()
         }
-        
+
         updateTable {
             DispatchQueue.main.async {
                 if let index = self.notesTableView.getIndex(note) {
@@ -1991,7 +1995,7 @@ class ViewController:
                 }
             }
         }
-        
+
         Analytics.trackEvent("MiaoYan NewNote")
     }
 
@@ -2074,18 +2078,21 @@ class ViewController:
         Analytics.trackEvent("MiaoYan Pin")
     }
 
-    func isMiaoYanPPT() -> Bool {
-        if let note = notesTableView.getSelectedNote() {
-            let content = note.content.string
-            if content.contains("---") {
-                return true
-            } else {
-                toast(message: NSLocalizedString("😶‍🌫 No delimiter --- identification, Cannot use MiaoYan PPT~", comment: ""))
-                return false
-            }
-        } else {
+    func isMiaoYanPPT(needToast: Bool = true) -> Bool {
+        guard let note = notesTableView.getSelectedNote() else {
             return false
         }
+
+        let content = note.content.string
+        if content.contains("---") {
+            return true
+        }
+
+        if needToast {
+            toast(message: NSLocalizedString("😶‍🌫 No delimiter --- identification, Cannot use MiaoYan PPT~", comment: ""))
+        }
+
+        return false
     }
 
     func toggleMagicPPT() {

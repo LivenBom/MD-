@@ -225,22 +225,24 @@ class MPreviewView: WKWebView, WKUIDelegate, WKNavigationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             super.evaluateJavaScript("document.readyState", completionHandler: { complete, _ in
                 if complete != nil {
-                    super.evaluateJavaScript("document.body.offsetHeight", completionHandler: { height, _ in
+                    super.evaluateJavaScript("document.body.scrollHeight", completionHandler: { height, _ in
                         guard let contentHeight = height as? CGFloat else {
                             print("Content height could not be obtained"); return
                         }
-                        super.evaluateJavaScript("document.body.offsetWidth", completionHandler: { [weak self] width, _ in
+                        super.evaluateJavaScript("document.body.scrollWidth", completionHandler: { [weak self] width, _ in
                             if let contentWidth = width as? CGFloat {
                                 let config = WKSnapshotConfiguration()
                                 config.rect = CGRect(x: 0, y: 0, width: contentWidth, height: contentHeight)
-                                config.afterScreenUpdates = false
+                                config.afterScreenUpdates = true
+                                // Improve resolution
+                                config.snapshotWidth = NSNumber(value: Double(contentWidth) * 2.0)
                                 self?.frame.size.height = contentHeight
                                 self?.takeSnapshot(with: config, completionHandler: { image, error in
                                     if let image = image {
                                         if let desktopURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first {
                                             let currentName = self?.note?.getExportTitle()
-                                            let destinationURL = desktopURL.appendingPathComponent(currentName! + ".jpeg")
-                                            try! image.saveJPEGRepresentationToURL(url: destinationURL)
+                                            let destinationURL = desktopURL.appendingPathComponent(currentName! + ".png")
+                                            try! image.savePNGRepresentationToURL(url: destinationURL)
                                         }
                                         vc.toastExport(status: true)
                                         print("Got snapshot")
@@ -364,6 +366,16 @@ class MPreviewView: WKWebView, WKUIDelegate, WKNavigationDelegate {
         return false
     }
 
+    func addLazyLoadToImages(in html: String) -> String {
+        // Regular expression matching<img> The tag does not contain the loading="lazy" attribute
+        let pattern = #"<img(?![^>]*\bloading\s*=\s*['"]?lazy['"]?)([^>]*)>"#
+        let regex = try! NSRegularExpression(pattern: pattern, options: [])
+
+        let modifiedHTML = regex.stringByReplacingMatches(in: html, options: [], range: NSRange(location: 0, length: html.utf16.count), withTemplate: "<img loading=\"lazy\"$1>")
+
+        return modifiedHTML
+    }
+
     func loadHTMLView(_ markdownString: String, css: String, imagesStorage: URL? = nil) throws {
         var htmlString = renderMarkdownHTML(markdown: markdownString)!
 
@@ -377,8 +389,13 @@ class MPreviewView: WKWebView, WKUIDelegate, WKNavigationDelegate {
             pageHTMLString = try htmlFromTemplate(markdownString, css: css)
         }
 
+        if !UserDefaultsManagement.isOnExport {
+            pageHTMLString = addLazyLoadToImages(in: pageHTMLString)
+        }
+
 //        print(">>>>>>")
 //        print(pageHTMLString)
+
         let indexURL = createTemporaryBundle(pageHTMLString: pageHTMLString)
 
         if let i = indexURL {
@@ -612,7 +629,7 @@ class HandlerSelection: NSObject, WKScriptMessageHandler {
     }
 }
 
-// 用于解决ppt模式下背景颜色变化左侧边框颜色的适配
+// Used to solve the adaptation of the left border/title color change with background color in PPT mode.
 class HandlerRevealBackgroundColor: NSObject, WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage)
@@ -622,9 +639,11 @@ class HandlerRevealBackgroundColor: NSObject, WKScriptMessageHandler {
         if message == "" {
             vc.setDividerHidden(hidden: true)
             vc.setSideDividerHidden(hidden: true)
+            vc.titleLabel.backgroundColor = NSColor(named: "mainBackground")
         } else {
             vc.sidebarSplitView.setValue(NSColor(css: message), forKey: "dividerColor")
             vc.splitView.setValue(NSColor(css: message), forKey: "dividerColor")
+            vc.titleLabel.backgroundColor = NSColor(css: message)
         }
     }
 }
